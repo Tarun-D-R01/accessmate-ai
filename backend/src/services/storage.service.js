@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { isMongoConnected } from '../config/db.js';
+import { getSupabaseClient, isSupabaseConfigured } from '../config/supabase.js';
 import { User } from '../models/User.model.js';
 import { DocumentModel } from '../models/Document.model.js';
 import { Activity } from '../models/Activity.model.js';
@@ -13,10 +14,75 @@ const memoryStore = {
 
 const createId = () => new mongoose.Types.ObjectId().toString();
 
+const mapSupabaseUser = (row) => {
+  if (!row) return null;
+  return {
+    _id: String(row.id),
+    authUserId: row.auth_user_id || null,
+    name: row.name,
+    email: row.email,
+    password: row.password,
+    preferredLanguage: row.preferred_language || 'English',
+    isDemo: Boolean(row.is_demo),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+const mapSupabaseDocument = (row) => {
+  if (!row) return null;
+  return {
+    _id: String(row.id),
+    userId: String(row.user_id),
+    title: row.title,
+    fileName: row.file_name,
+    mimeType: row.mime_type || 'text/plain',
+    fileSize: row.file_size || 0,
+    extractedText: row.extracted_text,
+    summary: row.summary,
+    simplifiedText: row.simplified_text,
+    keyTakeaways: Array.isArray(row.key_takeaways) ? row.key_takeaways : [],
+    complexTerms: Array.isArray(row.complex_terms) ? row.complex_terms : [],
+    qaHistory: Array.isArray(row.qa_history) ? row.qa_history : [],
+    isSample: Boolean(row.is_sample),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+const mapSupabaseActivity = (row) => {
+  if (!row) return null;
+  return {
+    _id: String(row.id),
+    userId: String(row.user_id),
+    type: row.type,
+    title: row.title,
+    summary: row.summary || '',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
 export const storageService = {
   // ---------------- USERS ----------------
   async findUserByEmail(email) {
     const normalized = email.toLowerCase().trim();
+    const supabase = getSupabaseClient();
+
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', normalized)
+        .maybeSingle();
+      if (!error && data) {
+        const mapped = mapSupabaseUser(data);
+        memoryStore.users.set(String(mapped._id), mapped);
+        return mapped;
+      }
+    }
+
     if (isMongoConnected()) {
       const user = await User.findOne({ email: normalized }).lean();
       if (user) {
@@ -24,6 +90,7 @@ export const storageService = {
       }
       return user;
     }
+
     for (const user of memoryStore.users.values()) {
       if (user.email === normalized) return { ...user };
     }
@@ -36,6 +103,21 @@ export const storageService = {
     if (cached) {
       return { ...cached };
     }
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', String(id))
+        .maybeSingle();
+      if (!error && data) {
+        const mapped = mapSupabaseUser(data);
+        memoryStore.users.set(String(mapped._id), mapped);
+        return mapped;
+      }
+    }
+
     if (isMongoConnected()) {
       if (!mongoose.Types.ObjectId.isValid(id)) return null;
       const user = await User.findById(id).lean();
@@ -49,6 +131,29 @@ export const storageService = {
 
   async createUser(userData) {
     const normalizedEmail = userData.email.toLowerCase().trim();
+    const supabase = getSupabaseClient();
+
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('users')
+        .insert({
+          auth_user_id: userData.authUserId || null,
+          name: userData.name,
+          email: normalizedEmail,
+          password: userData.password,
+          preferred_language: userData.preferredLanguage || 'English',
+          is_demo: Boolean(userData.isDemo),
+        })
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        const mapped = mapSupabaseUser(data);
+        memoryStore.users.set(String(mapped._id), mapped);
+        return mapped;
+      }
+    }
+
     if (isMongoConnected()) {
       const created = await User.create({
         ...userData,
@@ -58,6 +163,7 @@ export const storageService = {
       memoryStore.users.set(String(obj._id), obj);
       return obj;
     }
+
     const now = new Date().toISOString();
     const newUser = {
       _id: createId(),
@@ -75,11 +181,27 @@ export const storageService = {
 
   // ---------------- DOCUMENTS ----------------
   async getDocumentsByUser(userId) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('user_id', String(userId))
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        const docs = data.map(mapSupabaseDocument);
+        docs.forEach((d) => memoryStore.documents.set(String(d._id), d));
+        return docs;
+      }
+    }
+
     if (isMongoConnected()) {
       return await DocumentModel.find({ userId })
         .sort({ createdAt: -1 })
         .lean();
     }
+
     const docs = [];
     for (const doc of memoryStore.documents.values()) {
       if (String(doc.userId) === String(userId)) {
@@ -94,6 +216,23 @@ export const storageService = {
     if (cached && String(cached.userId) === String(userId)) {
       return { ...cached };
     }
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('id', String(docId))
+        .eq('user_id', String(userId))
+        .maybeSingle();
+
+      if (!error && data) {
+        const mapped = mapSupabaseDocument(data);
+        memoryStore.documents.set(String(mapped._id), mapped);
+        return mapped;
+      }
+    }
+
     if (isMongoConnected()) {
       if (!mongoose.Types.ObjectId.isValid(docId)) return null;
       const doc = await DocumentModel.findOne({ _id: docId, userId }).lean();
@@ -106,10 +245,41 @@ export const storageService = {
   },
 
   async createDocument(docData) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('documents')
+        .insert({
+          user_id: String(docData.userId),
+          title: docData.title,
+          file_name: docData.fileName,
+          mime_type: docData.mimeType || 'text/plain',
+          file_size: docData.fileSize || 0,
+          extracted_text: docData.extractedText,
+          summary: docData.summary,
+          simplified_text: docData.simplifiedText,
+          key_takeaways: docData.keyTakeaways || [],
+          complex_terms: docData.complexTerms || [],
+          qa_history: docData.qaHistory || [],
+          is_sample: Boolean(docData.isSample),
+        })
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        const mapped = mapSupabaseDocument(data);
+        memoryStore.documents.set(String(mapped._id), mapped);
+        return mapped;
+      }
+    }
+
     if (isMongoConnected()) {
       const created = await DocumentModel.create(docData);
-      return created.toObject();
+      const obj = created.toObject();
+      memoryStore.documents.set(String(obj._id), obj);
+      return obj;
     }
+
     const now = new Date().toISOString();
     const newDoc = {
       _id: createId(),
@@ -139,6 +309,31 @@ export const storageService = {
       answer: qaEntry.answer,
       askedAt: new Date().toISOString(),
     };
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const existing = await this.getDocumentById(docId, userId);
+      if (existing) {
+        const nextHistory = [...(existing.qaHistory || []), entry];
+        const { data, error } = await supabase
+          .from('documents')
+          .update({
+            qa_history: nextHistory,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', String(docId))
+          .eq('user_id', String(userId))
+          .select('*')
+          .maybeSingle();
+
+        if (!error && data) {
+          const mapped = mapSupabaseDocument(data);
+          memoryStore.documents.set(String(mapped._id), mapped);
+          return mapped;
+        }
+      }
+    }
+
     if (isMongoConnected()) {
       if (!mongoose.Types.ObjectId.isValid(docId)) return null;
       const updated = await DocumentModel.findOneAndUpdate(
@@ -146,8 +341,12 @@ export const storageService = {
         { $push: { qaHistory: entry } },
         { new: true }
       ).lean();
+      if (updated) {
+        memoryStore.documents.set(String(updated._id), updated);
+      }
       return updated;
     }
+
     const doc = memoryStore.documents.get(String(docId));
     if (!doc || String(doc.userId) !== String(userId)) return null;
     doc.qaHistory = [...(doc.qaHistory || []), entry];
@@ -157,19 +356,47 @@ export const storageService = {
   },
 
   async deleteDocument(docId, userId) {
+    memoryStore.documents.delete(String(docId));
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { error } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', String(docId))
+        .eq('user_id', String(userId));
+      if (!error) return true;
+    }
+
     if (isMongoConnected()) {
       if (!mongoose.Types.ObjectId.isValid(docId)) return false;
       const res = await DocumentModel.findOneAndDelete({ _id: docId, userId });
       return Boolean(res);
     }
-    const doc = memoryStore.documents.get(String(docId));
-    if (!doc || String(doc.userId) !== String(userId)) return false;
-    memoryStore.documents.delete(String(docId));
+
     return true;
   },
 
   // ---------------- ACTIVITIES ----------------
   async logActivity({ userId, type, title, summary = '', metadata = {} }) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('activities')
+        .insert({
+          user_id: String(userId),
+          type,
+          title,
+          summary,
+          metadata,
+        })
+        .select('*')
+        .maybeSingle();
+
+      if (!error && data) {
+        return mapSupabaseActivity(data);
+      }
+    }
+
     if (isMongoConnected()) {
       const created = await Activity.create({
         userId,
@@ -180,6 +407,7 @@ export const storageService = {
       });
       return created.toObject();
     }
+
     const now = new Date().toISOString();
     const act = {
       _id: createId(),
@@ -196,12 +424,27 @@ export const storageService = {
   },
 
   async getActivitiesByUser(userId, limit = 30) {
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('activities')
+        .select('*')
+        .eq('user_id', String(userId))
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (!error && Array.isArray(data)) {
+        return data.map(mapSupabaseActivity);
+      }
+    }
+
     if (isMongoConnected()) {
       return await Activity.find({ userId })
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();
     }
+
     const list = [];
     for (const act of memoryStore.activities.values()) {
       if (String(act.userId) === String(userId)) {
@@ -211,5 +454,11 @@ export const storageService = {
     return list
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, limit);
+  },
+
+  getActiveBackendProvider() {
+    if (isSupabaseConfigured()) return 'supabase-postgres';
+    if (isMongoConnected()) return 'mongodb-atlas';
+    return 'in-memory-fallback';
   },
 };

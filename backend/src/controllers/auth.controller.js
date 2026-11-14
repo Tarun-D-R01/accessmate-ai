@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import { storageService } from '../services/storage.service.js';
+import { getSupabaseClient, isSupabaseConfigured } from '../config/supabase.js';
 import { ensureDemoUserAndSeed } from '../services/seed.service.js';
 import { signToken } from '../utils/jwt.utils.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -19,8 +20,29 @@ export const authController = {
         throw new ApiError(409, 'An account with this email already exists. Please log in.');
       }
 
+      let supabaseAuthUserId = null;
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseClient();
+          const { data: authData } = await supabase.auth.signUp({
+            email: email.toLowerCase().trim(),
+            password,
+            options: {
+              data: {
+                name,
+                preferredLanguage: preferredLanguage || 'English',
+              },
+            },
+          });
+          supabaseAuthUserId = authData?.user?.id || null;
+        } catch (supaErr) {
+          console.warn('⚠️ [Supabase Auth SignUp] Proceeding with local user record:', supaErr.message);
+        }
+      }
+
       const hashedPassword = await bcrypt.hash(password, 10);
       const user = await storageService.createUser({
+        authUserId: supabaseAuthUserId,
         name,
         email,
         password: hashedPassword,
@@ -34,6 +56,7 @@ export const authController = {
         success: true,
         message: 'Account created successfully.',
         token,
+        authProvider: isSupabaseConfigured() ? 'supabase' : 'jwt',
         user: sanitizeUser(user),
       });
     } catch (error) {
@@ -44,15 +67,53 @@ export const authController = {
   async login(req, res, next) {
     try {
       const { email, password } = req.body;
+      const normalizedEmail = email.toLowerCase().trim();
 
-      const user = await storageService.findUserByEmail(email);
+      let supabaseVerified = false;
+      let supabaseUserObj = null;
+
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseClient();
+          const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+            email: normalizedEmail,
+            password,
+          });
+          if (!authErr && authData?.user) {
+            supabaseVerified = true;
+            supabaseUserObj = authData.user;
+          }
+        } catch {
+          // Fall back to password hash check in storageService
+        }
+      }
+
+      let user = await storageService.findUserByEmail(normalizedEmail);
+
+      if (!user && supabaseVerified && supabaseUserObj) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        user = await storageService.createUser({
+          authUserId: supabaseUserObj.id,
+          name:
+            supabaseUserObj.user_metadata?.name ||
+            normalizedEmail.split('@')[0] ||
+            'ACCESSMATE User',
+          email: normalizedEmail,
+          password: hashedPassword,
+          preferredLanguage: supabaseUserObj.user_metadata?.preferredLanguage || 'English',
+          isDemo: false,
+        });
+      }
+
       if (!user) {
         throw new ApiError(401, 'Invalid email or password.');
       }
 
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        throw new ApiError(401, 'Invalid email or password.');
+      if (!supabaseVerified) {
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+          throw new ApiError(401, 'Invalid email or password.');
+        }
       }
 
       const token = signToken({ id: user._id, email: user.email });
@@ -61,6 +122,7 @@ export const authController = {
         success: true,
         message: 'Logged in successfully.',
         token,
+        authProvider: isSupabaseConfigured() ? 'supabase' : 'jwt',
         user: sanitizeUser(user),
       });
     } catch (error) {

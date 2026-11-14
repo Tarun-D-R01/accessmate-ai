@@ -2,12 +2,26 @@
   "name": "accessmate-ai-monorepo",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "ACCESSMATE AI - Information Without Barriers (Full-Stack Accessibility Assistant)",
   "scripts": {
     "install:all": "npm --prefix backend install && npm --prefix frontend install",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "start:backend": "npm --prefix backend start",
-    "build:frontend": "npm --prefix frontend run build"
+    "build:frontend": "npm --prefix frontend run build",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build"
+  },
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.10.1",
+    "multer": "^1.4.5-lts.1",
+    "zod": "^3.24.2"
   }
 }

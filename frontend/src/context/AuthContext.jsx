@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
+import { supabase, isFrontendSupabaseConfigured } from '../services/supabase';
 
 const AuthContext = createContext(null);
 
@@ -47,12 +48,30 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
+    if (isFrontendSupabaseConfigured && supabase) {
+      try {
+        await supabase.auth.signInWithPassword({ email, password });
+      } catch {
+        // Backend /auth/login handles verification and session creation
+      }
+    }
     const { data } = await api.post('/auth/login', { email, password });
     saveAuth(data.token, data.user);
     return data;
   };
 
   const register = async (name, email, password, preferredLanguage = 'English') => {
+    if (isFrontendSupabaseConfigured && supabase) {
+      try {
+        await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name, preferredLanguage } },
+        });
+      } catch {
+        // Backend /auth/register handles registration and session creation
+      }
+    }
     const { data } = await api.post('/auth/register', {
       name,
       email,
@@ -70,6 +89,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = useCallback(() => {
+    if (isFrontendSupabaseConfigured && supabase) {
+      supabase.auth.signOut().catch(() => {});
+    }
     localStorage.removeItem('accessmate_token');
     localStorage.removeItem('accessmate_user');
     setToken(null);

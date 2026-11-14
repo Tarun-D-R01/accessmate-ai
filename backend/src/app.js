@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { env, isPlaceholderGeminiKey, isPlaceholderElevenLabsKey } from './config/env.js';
 import { isMongoConnected } from './config/db.js';
+import { isSupabaseConfigured } from './config/supabase.js';
+import { storageService } from './services/storage.service.js';
 import authRoutes from './routes/auth.routes.js';
 import documentRoutes from './routes/document.routes.js';
 import translateRoutes from './routes/translate.routes.js';
@@ -35,7 +37,9 @@ app.get('/api/health', (req, res) => {
     success: true,
     service: 'ACCESSMATE AI Backend API',
     tagline: 'Information Without Barriers',
-    database: isMongoConnected() ? 'mongodb-atlas' : 'in-memory-fallback',
+    database: storageService.getActiveBackendProvider(),
+    supabaseConfigured: isSupabaseConfigured(),
+    mongoConnected: isMongoConnected(),
     geminiConfigured: !isPlaceholderGeminiKey(env.GEMINI_API_KEY),
     elevenLabsConfigured: !isPlaceholderElevenLabsKey(env.ELEVENLABS_API_KEY),
     model: 'gemini-3.8-flash',
