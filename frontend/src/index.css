@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Root Accessibility Font Scaling */
+html.text-scale-normal {
+  font-size: 16px;
+}
+
+html.text-scale-large {
+  font-size: 18.5px;
+}
+
+html.text-scale-xl {
+  font-size: 21px;
+}
+
+/* Strong WCAG 2.2 AA/AAA Focus Indicators */
+*:focus-visible {
+  outline: 3px solid #2563EB !important;
+  outline-offset: 2px !important;
+}
+
+html.high-contrast-mode *:focus-visible {
+  outline: 3px solid #FACC15 !important;
+  outline-offset: 3px !important;
+}
+
+/* High-Contrast Mode Theme Overrides (WCAG AAA Contrast) */
+html.high-contrast-mode body {
+  background-color: #020617 !important;
+  color: #FFFFFF !important;
+}
+
+html.high-contrast-mode .hc-surface {
+  background-color: #0F172A !important;
+  color: #FFFFFF !important;
+  border-color: #FACC15 !important;
+  border-width: 2px !important;
+}
+
+html.high-contrast-mode .hc-card {
+  background-color: #090D16 !important;
+  color: #FFFFFF !important;
+  border-color: #94A3B8 !important;
+  border-width: 2px !important;
+}
+
+html.high-contrast-mode .hc-muted {
+  color: #E2E8F0 !important;
+}
+
+html.high-contrast-mode .hc-accent {
+  background-color: #FACC15 !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+}
+
+html.high-contrast-mode .hc-input {
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
+  border: 2px solid #FFFFFF !important;
+}
+
+/* Skip to main content link for keyboard users */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.75rem 1.25rem;
+  background-color: #4338CA;
+  color: #FFFFFF;
+  font-weight: 700;
+  border-radius: 0.5rem;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* Reduced Motion Mode (WCAG 2.2 Vestibular & Cognitive Comfort) */
+html.reduced-motion-mode *,
+html.reduced-motion-mode *::before,
+html.reduced-motion-mode *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
